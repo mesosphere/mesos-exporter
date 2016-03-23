@@ -138,7 +138,7 @@ func newSlaveMonitorCollector(url string, timeout time.Duration) *slaveCollector
 }
 
 func (c *slaveCollector) Collect(ch chan<- prometheus.Metric) {
-	res, err := http.Get(c.url + "/monitor/statistics.json")
+	res, err := http.Get(c.url + "/monitor/statistics")
 	if err != nil {
 		log.Print(err)
 		return
