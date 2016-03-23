@@ -226,7 +226,7 @@ func newMasterStateCollector(url string, timeout time.Duration) *masterCollector
 }
 
 func (c *masterCollector) Collect(ch chan<- prometheus.Metric) {
-	res, err := c.Get(c.url + "/state.json")
+	res, err := c.Get(c.url + "/state")
 	if err != nil {
 		log.Print(err)
 		return
