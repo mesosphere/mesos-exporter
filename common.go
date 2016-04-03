@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -48,8 +49,37 @@ func newMetricCollector(url string, timeout time.Duration, metrics map[prometheu
 	}
 }
 
+func findLeader(url string) (string, error) {
+	if !strings.ContainsAny(url, ",") {
+		return url, nil
+	}
+	for _, testUrl := range strings.Split(url, ",") {
+		resp, err := http.Get(testUrl + "/state.json")
+		if err != nil {
+			log.Print(err)
+			continue
+		}
+		defer resp.Body.Close()
+		var s state
+		if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+			log.Print(err)
+			continue
+		}
+		if s.Leader == "master@" + testUrl[7:len(testUrl)] {
+			return testUrl, nil
+		}
+	}
+	return "", errors.New("Unable to find leader")
+}
+
 func (c *metricCollector) Collect(ch chan<- prometheus.Metric) {
-	res, err := c.Get(c.url + "/metrics/snapshot")
+	leaderUrl, err := findLeader(c.url)
+	if err != nil {
+		log.Print(err)
+		errorCounter.Inc()
+		return
+	}
+	res, err := c.Get(leaderUrl + "/metrics/snapshot")
 	if err != nil {
 		log.Print(err)
 		errorCounter.Inc()
