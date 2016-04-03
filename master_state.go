@@ -56,6 +56,7 @@ type (
 	}
 
 	state struct {
+		Leader     string      `json:"leader"`
 		Slaves     []slave     `json:"slaves"`
 		Frameworks []framework `json:"frameworks"`
 	}
@@ -226,7 +227,12 @@ func newMasterStateCollector(url string, timeout time.Duration) *masterCollector
 }
 
 func (c *masterCollector) Collect(ch chan<- prometheus.Metric) {
-	res, err := c.Get(c.url + "/state.json")
+	leaderUrl, err := findLeader(c.url)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	res, err := c.Get(leaderUrl + "/state.json")
 	if err != nil {
 		log.Print(err)
 		return
