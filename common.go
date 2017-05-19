@@ -40,6 +40,15 @@ type (
 		State     string  `json:"state"`
 		Timestamp float64 `json:"timestamp"`
 	}
+
+	tokenResponse struct {
+		Token string `json:"token"`
+	}
+
+	tokenRequest struct {
+		UID string `json:"uid"`
+		Token string `json:"token"`
+	}
 )
 
 type metricMap map[string]float64
@@ -129,6 +138,10 @@ func counter(subsystem, name, help string, labels ...string) *settableCounterVec
 type authInfo struct {
 	username string
 	password string
+	token string
+	strictMode bool
+	privateKey string
+	skipSSLVerify bool
 }
 
 type httpClient struct {
@@ -153,8 +166,11 @@ func (httpClient *httpClient) fetchAndDecode(endpoint string, target interface{}
 		log.Printf("Error creating HTTP request to %s: %s", url, err)
 		return false
 	}
-	if httpClient.auth.username != "" && httpClient.auth.password != "" {
+	if httpClient.auth.username != "" && httpClient.auth.password != "" && !httpClient.auth.strictMode {
 		req.SetBasicAuth(httpClient.auth.username, httpClient.auth.password)
+	}
+	if httpClient.auth.strictMode {
+		req.Header.Add("Authorization", httpClient.auth.token)
 	}
 	res, err := httpClient.Do(req)
 	if err != nil {

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"path/filepath"
+	"fmt"
+	"bytes"
+	"encoding/json"
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
@@ -11,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -43,7 +48,7 @@ func getX509CertPool(pemFiles []string) *x509.CertPool {
 
 func mkHttpClient(url string, timeout time.Duration, auth authInfo, certPool *x509.CertPool) *httpClient {
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{RootCAs: certPool},
+		TLSClientConfig: &tls.Config{RootCAs: certPool, InsecureSkipVerify: auth.skipSSLVerify},
 	}
 
 	// HTTP Redirects are authenticated by Go (>=1.8), when redirecting to an identical domain or a subdomain.
@@ -57,11 +62,75 @@ func mkHttpClient(url string, timeout time.Duration, auth authInfo, certPool *x5
 		}
 	}
 
-	return &httpClient{
+	client := &httpClient{
 		http.Client{Timeout: timeout, Transport: transport, CheckRedirect: redirectFunc},
 		url,
 		auth,
 	}
+
+	if auth.strictMode {
+		client.auth.token = authToken(client)
+	}
+
+	return client
+}
+
+func loginAuthToken(username string, privateKey string) string {
+	absPath, _ := filepath.Abs(privateKey)
+	signBytes, err := ioutil.ReadFile(absPath)
+	if err != nil {
+		log.Printf("Error reading private key %s: %s", absPath, err)
+		return ""
+	}
+	signKey, err := jwt.ParseRSAPrivateKeyFromPEM(signBytes)
+	if err != nil {
+		log.Printf("Error parsing privateKey %s: %s", absPath, err)
+	}
+
+	// Create the token
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"uid": username,
+	})
+	// Sign and get the complete encoded token as a string
+	tokenString, err := token.SignedString(signKey)
+	if err != nil {
+		log.Printf("Error creating login token %s: %s", token, err)
+		return ""
+	}
+	return tokenString
+}
+
+func authToken(httpClient *httpClient) string {
+	url := "https://master.mesos/acs/api/v1/auth/login"
+	loginToken := loginAuthToken(httpClient.auth.username, httpClient.auth.privateKey)
+	body, err := json.Marshal(&tokenRequest{UID: httpClient.auth.username, Token: loginToken})
+	if err != nil {
+		log.Printf("Error creating JSON request: %s", err)
+		return ""
+	}
+	buffer := bytes.NewBuffer(body)
+	req, err := http.NewRequest("POST", url, buffer)
+	if err != nil {
+		log.Printf("Error creating HTTP request to %s: %s", url, err)
+		return ""
+	}
+	req.Header.Add("Content-Type", "application/json")
+	res, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("Error fetching %s: %s", url, err)
+		errorCounter.Inc()
+		return ""
+	}
+	defer res.Body.Close()
+
+	var token tokenResponse
+	if err := json.NewDecoder(res.Body).Decode(&token); err != nil {
+		log.Printf("Error decoding response body from %s: %s", url, err)
+		errorCounter.Inc()
+		return ""
+	}
+
+	return fmt.Sprintf("token=%s", token.Token)
 }
 
 func csvInputToList(input string) []string {
@@ -83,15 +152,38 @@ func main() {
 	exportedTaskLabels := fs.String("exportedTaskLabels", "", "Comma-separated list of task labels to include in the corresponding metric")
 	exportedSlaveAttributes := fs.String("exportedSlaveAttributes", "", "Comma-separated list of slave attributes to include in the corresponding metric")
 	trustedCerts := fs.String("trustedCerts", "", "Comma-separated list of certificates (.pem files) trusted for requests to Mesos endpoints")
+	strictMode := fs.Bool("strictMode", false, "Use strict mode authentication")
+	username := fs.String("username", "", "Username for authentication")
+	password := fs.String("password", "", "Password for authentication")
+	privateKey := fs.String("privateKey", "", "Certificate for strict mode authentication")
+	skipSSLVerify := fs.Bool("skipSSLVerify", false, "Skip SSL certificate verification")
 
 	fs.Parse(os.Args[1:])
 	if *masterURL != "" && *slaveURL != "" {
 		log.Fatal("Only -master or -slave can be given at a time")
 	}
 
+	if *strictMode && *privateKey == "" {
+		log.Fatal("Must specify a private key when using strict mode authentiation!")
+		os.Exit(1)
+	}
+
 	auth := authInfo{
-		os.Getenv("MESOS_EXPORTER_USERNAME"),
-		os.Getenv("MESOS_EXPORTER_PASSWORD"),
+		strictMode: *strictMode,
+		skipSSLVerify: *skipSSLVerify,
+		privateKey: *privateKey,
+	}
+
+	if *username != "" {
+		auth.username = *username
+	} else {
+		auth.username = os.Getenv("MESOS_EXPORTER_USERNAME")
+	}
+
+	if *password != "" {
+		auth.password = *password
+	} else {
+		auth.password = os.Getenv("MESOS_EXPORTER_PASSWORD")
 	}
 
 	var certPool *x509.CertPool = nil
