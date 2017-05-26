@@ -75,21 +75,40 @@ func mkHttpClient(url string, timeout time.Duration, auth authInfo, certPool *x5
 	return client
 }
 
-func loginAuthToken(username string, privateKey string) string {
-	absPath, _ := filepath.Abs(privateKey)
-	signBytes, err := ioutil.ReadFile(absPath)
-	if err != nil {
-		log.Printf("Error reading private key %s: %s", absPath, err)
-		return ""
+func parsePrivateKey(httpClient *httpClient) []byte {
+	if _, err := os.Stat(httpClient.auth.privateKey); os.IsNotExist(err) {
+		buffer := bytes.NewBuffer([]byte(httpClient.auth.privateKey))
+		var key mesosSecret
+		if err := json.NewDecoder(buffer).Decode(&key); err != nil {
+			log.Printf("Error decoding prviate key %s: %s", key, err)
+			errorCounter.Inc()
+			return []byte{}
+		}
+		httpClient.auth.username = key.UID
+		httpClient.auth.loginUrl = key.LoginEndpoint
+		return []byte(key.PrivateKey)
+	} else {
+		absPath, _ := filepath.Abs(httpClient.auth.privateKey)
+		key, err := ioutil.ReadFile(absPath)
+		if err != nil {
+			log.Printf("Error reading private key %s: %s", absPath, err)
+			errorCounter.Inc()
+			return []byte{}
+		}
+		return key
 	}
-	signKey, err := jwt.ParseRSAPrivateKeyFromPEM(signBytes)
+}
+
+func loginAuthToken(httpClient *httpClient) string {
+	key := parsePrivateKey(httpClient)
+	signKey, err := jwt.ParseRSAPrivateKeyFromPEM(key)
 	if err != nil {
-		log.Printf("Error parsing privateKey %s: %s", absPath, err)
+		log.Printf("Error parsing privateKey: %s", err)
 	}
 
 	// Create the token
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"uid": username,
+		"uid": httpClient.auth.username,
 	})
 	// Sign and get the complete encoded token as a string
 	tokenString, err := token.SignedString(signKey)
@@ -101,8 +120,8 @@ func loginAuthToken(username string, privateKey string) string {
 }
 
 func authToken(httpClient *httpClient) string {
-	url := "https://master.mesos/acs/api/v1/auth/login"
-	loginToken := loginAuthToken(httpClient.auth.username, httpClient.auth.privateKey)
+	url := httpClient.auth.loginUrl
+	loginToken := loginAuthToken(httpClient)
 	body, err := json.Marshal(&tokenRequest{UID: httpClient.auth.username, Token: loginToken})
 	if err != nil {
 		log.Printf("Error creating JSON request: %s", err)
@@ -155,7 +174,8 @@ func main() {
 	strictMode := fs.Bool("strictMode", false, "Use strict mode authentication")
 	username := fs.String("username", "", "Username for authentication")
 	password := fs.String("password", "", "Password for authentication")
-	privateKey := fs.String("privateKey", "", "Certificate for strict mode authentication")
+	loginUrl := fs.String("loginUrl", "https://leader.mesos/acs/api/v1/auth/login", "URLfor strict mode authentication")
+	privateKey := fs.String("privateKey", "", "File path to certificate for strict mode authentication")
 	skipSSLVerify := fs.Bool("skipSSLVerify", false, "Skip SSL certificate verification")
 
 	fs.Parse(os.Args[1:])
@@ -163,15 +183,16 @@ func main() {
 		log.Fatal("Only -master or -slave can be given at a time")
 	}
 
-	if *strictMode && *privateKey == "" {
-		log.Fatal("Must specify a private key when using strict mode authentiation!")
-		os.Exit(1)
-	}
-
 	auth := authInfo{
 		strictMode: *strictMode,
 		skipSSLVerify: *skipSSLVerify,
-		privateKey: *privateKey,
+		loginUrl: *loginUrl,
+	}
+
+	if *strictMode && *privateKey != "" {
+		auth.privateKey = *privateKey
+	} else {
+		auth.privateKey = os.Getenv("MESOS_EXPORTER_PRIVATE_KEY")
 	}
 
 	if *username != "" {

@@ -49,6 +49,13 @@ type (
 		UID string `json:"uid"`
 		Token string `json:"token"`
 	}
+
+	mesosSecret struct {
+		LoginEndpoint string `json:"login_endpoint"`
+		PrivateKey string `json:"private_key"`
+		Scheme string `json:"scheme"`
+		UID string `json:"uid"`
+	}
 )
 
 type metricMap map[string]float64
@@ -138,6 +145,7 @@ func counter(subsystem, name, help string, labels ...string) *settableCounterVec
 type authInfo struct {
 	username string
 	password string
+	loginUrl string
 	token string
 	strictMode bool
 	privateKey string
@@ -166,7 +174,7 @@ func (httpClient *httpClient) fetchAndDecode(endpoint string, target interface{}
 		log.Printf("Error creating HTTP request to %s: %s", url, err)
 		return false
 	}
-	if httpClient.auth.username != "" && httpClient.auth.password != "" && !httpClient.auth.strictMode {
+	if httpClient.auth.username != "" && httpClient.auth.password != "" {
 		req.SetBasicAuth(httpClient.auth.username, httpClient.auth.password)
 	}
 	if httpClient.auth.strictMode {
