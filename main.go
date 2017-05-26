@@ -174,7 +174,7 @@ func main() {
 	strictMode := fs.Bool("strictMode", false, "Use strict mode authentication")
 	username := fs.String("username", "", "Username for authentication")
 	password := fs.String("password", "", "Password for authentication")
-	loginUrl := fs.String("loginUrl", "https://leader.mesos/acs/api/v1/auth/login", "URLfor strict mode authentication")
+	loginUrl := fs.String("loginUrl", "https://leader.mesos/acs/api/v1/auth/login", "URL for strict mode authentication")
 	privateKey := fs.String("privateKey", "", "File path to certificate for strict mode authentication")
 	skipSSLVerify := fs.Bool("skipSSLVerify", false, "Skip SSL certificate verification")
 
