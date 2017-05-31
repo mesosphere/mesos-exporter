@@ -10,7 +10,7 @@ func newMasterCollector(httpClient *httpClient) prometheus.Collector {
 	metrics := map[prometheus.Collector]func(metricMap, prometheus.Collector) error{
 		// CPU/Disk/Mem resources in free/used
 		gauge("master", "cpus", "Current CPU resources in cluster.", "type"): func(m metricMap, c prometheus.Collector) error {
-			total, ok := m["master/cpus_total"]
+			total, ok := m["system/cpus_total"]
 			used, ok := m["master/cpus_used"]
 			if !ok {
 				return notFoundInMap
