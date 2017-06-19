@@ -67,7 +67,7 @@ func newMasterCollector(httpClient *httpClient) prometheus.Collector {
 		}): func(m metricMap, c prometheus.Collector) error {
 			elected, ok := m["master/elected"]
 			if !ok {
-				return notFoundInMap
+				return errNotFoundInMap
 			}
 			c.(prometheus.Gauge).Set(elected)
 			return nil
@@ -80,7 +80,7 @@ func newMasterCollector(httpClient *httpClient) prometheus.Collector {
 		}): func(m metricMap, c prometheus.Collector) error {
 			uptime, ok := m["master/uptime_secs"]
 			if !ok {
-				return notFoundInMap
+				return errNotFoundInMap
 			}
 			c.(prometheus.Gauge).Set(uptime)
 			return nil

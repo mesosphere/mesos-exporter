@@ -1,21 +1,19 @@
 package main
 
 import (
-	"path/filepath"
-	"fmt"
 	"bytes"
-	"encoding/json"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -46,7 +44,7 @@ func getX509CertPool(pemFiles []string) *x509.CertPool {
 	return pool
 }
 
-func mkHttpClient(url string, timeout time.Duration, auth authInfo, certPool *x509.CertPool) *httpClient {
+func mkHTTPClient(url string, timeout time.Duration, auth authInfo, certPool *x509.CertPool) *httpClient {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{RootCAs: certPool, InsecureSkipVerify: auth.skipSSLVerify},
 	}
@@ -69,7 +67,7 @@ func mkHttpClient(url string, timeout time.Duration, auth authInfo, certPool *x5
 	}
 
 	if auth.strictMode {
-		client.auth.token = authToken(client)
+		client.auth.signingKey = parsePrivateKey(client)
 	}
 
 	return client
@@ -85,71 +83,17 @@ func parsePrivateKey(httpClient *httpClient) []byte {
 			return []byte{}
 		}
 		httpClient.auth.username = key.UID
-		httpClient.auth.loginUrl = key.LoginEndpoint
+		httpClient.auth.loginURL = key.LoginEndpoint
 		return []byte(key.PrivateKey)
-	} else {
-		absPath, _ := filepath.Abs(httpClient.auth.privateKey)
-		key, err := ioutil.ReadFile(absPath)
-		if err != nil {
-			log.Printf("Error reading private key %s: %s", absPath, err)
-			errorCounter.Inc()
-			return []byte{}
-		}
-		return key
 	}
-}
-
-func loginAuthToken(httpClient *httpClient) string {
-	key := parsePrivateKey(httpClient)
-	signKey, err := jwt.ParseRSAPrivateKeyFromPEM(key)
+	absPath, _ := filepath.Abs(httpClient.auth.privateKey)
+	key, err := ioutil.ReadFile(absPath)
 	if err != nil {
-		log.Printf("Error parsing privateKey: %s", err)
-	}
-
-	// Create the token
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"uid": httpClient.auth.username,
-	})
-	// Sign and get the complete encoded token as a string
-	tokenString, err := token.SignedString(signKey)
-	if err != nil {
-		log.Printf("Error creating login token %s: %s", token, err)
-		return ""
-	}
-	return tokenString
-}
-
-func authToken(httpClient *httpClient) string {
-	url := httpClient.auth.loginUrl
-	loginToken := loginAuthToken(httpClient)
-	body, err := json.Marshal(&tokenRequest{UID: httpClient.auth.username, Token: loginToken})
-	if err != nil {
-		log.Printf("Error creating JSON request: %s", err)
-		return ""
-	}
-	buffer := bytes.NewBuffer(body)
-	req, err := http.NewRequest("POST", url, buffer)
-	if err != nil {
-		log.Printf("Error creating HTTP request to %s: %s", url, err)
-		return ""
-	}
-	req.Header.Add("Content-Type", "application/json")
-	res, err := httpClient.Do(req)
-	if err != nil {
-		log.Printf("Error fetching %s: %s", url, err)
+		log.Printf("Error reading private key %s: %s", absPath, err)
 		errorCounter.Inc()
-		return ""
+		return []byte{}
 	}
-	defer res.Body.Close()
-
-	var token tokenResponse
-	if err := json.NewDecoder(res.Body).Decode(&token); err != nil {
-		log.Printf("Error decoding response body from %s: %s", url, err)
-		errorCounter.Inc()
-		return ""
-	}
-
-	return fmt.Sprintf("token=%s", token.Token)
+	return key
 }
 
 func csvInputToList(input string) []string {
@@ -174,7 +118,7 @@ func main() {
 	strictMode := fs.Bool("strictMode", false, "Use strict mode authentication")
 	username := fs.String("username", "", "Username for authentication")
 	password := fs.String("password", "", "Password for authentication")
-	loginUrl := fs.String("loginUrl", "https://leader.mesos/acs/api/v1/auth/login", "URL for strict mode authentication")
+	loginURL := fs.String("loginURL", "https://leader.mesos/acs/api/v1/auth/login", "URL for strict mode authentication")
 	privateKey := fs.String("privateKey", "", "File path to certificate for strict mode authentication")
 	skipSSLVerify := fs.Bool("skipSSLVerify", false, "Skip SSL certificate verification")
 
@@ -184,9 +128,9 @@ func main() {
 	}
 
 	auth := authInfo{
-		strictMode: *strictMode,
+		strictMode:    *strictMode,
 		skipSSLVerify: *skipSSLVerify,
-		loginUrl: *loginUrl,
+		loginURL:      *loginURL,
 	}
 
 	if *strictMode && *privateKey != "" {
@@ -207,7 +151,7 @@ func main() {
 		auth.password = os.Getenv("MESOS_EXPORTER_PASSWORD")
 	}
 
-	var certPool *x509.CertPool = nil
+	var certPool *x509.CertPool
 	if *trustedCerts != "" {
 		certPool = getX509CertPool(csvInputToList(*trustedCerts))
 	}
@@ -223,7 +167,7 @@ func main() {
 				return newMasterStateCollector(c, slaveAttributeLabels)
 			},
 		} {
-			c := f(mkHttpClient(*masterURL, *timeout, auth, certPool))
+			c := f(mkHTTPClient(*masterURL, *timeout, auth, certPool))
 			if err := prometheus.Register(c); err != nil {
 				log.Fatal(err)
 			}
@@ -247,7 +191,7 @@ func main() {
 		}
 
 		for _, f := range slaveCollectors {
-			c := f(mkHttpClient(*slaveURL, *timeout, auth, certPool))
+			c := f(mkHTTPClient(*slaveURL, *timeout, auth, certPool))
 			if err := prometheus.Register(c); err != nil {
 				log.Fatal(err)
 			}
