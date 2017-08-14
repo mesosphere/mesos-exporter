@@ -1,6 +1,6 @@
 FROM alpine:3.4
 
-EXPOSE 9110
+EXPOSE 9105
 
 RUN addgroup exporter \
  && adduser -S -G exporter exporter
