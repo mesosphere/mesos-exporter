@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -40,12 +44,28 @@ type (
 		State     string  `json:"state"`
 		Timestamp float64 `json:"timestamp"`
 	}
+
+	tokenResponse struct {
+		Token string `json:"token"`
+	}
+
+	tokenRequest struct {
+		UID   string `json:"uid"`
+		Token string `json:"token"`
+	}
+
+	mesosSecret struct {
+		LoginEndpoint string `json:"login_endpoint"`
+		PrivateKey    string `json:"private_key"`
+		Scheme        string `json:"scheme"`
+		UID           string `json:"uid"`
+	}
 )
 
 type metricMap map[string]float64
 
 var (
-	notFoundInMap = errors.New("Couldn't find key in map")
+	errNotFoundInMap = errors.New("Couldn't find key in map")
 )
 
 type settableCounterVec struct {
@@ -127,8 +147,15 @@ func counter(subsystem, name, help string, labels ...string) *settableCounterVec
 }
 
 type authInfo struct {
-	username string
-	password string
+	username      string
+	password      string
+	loginURL      string
+	token         string
+	tokenExpire   int64
+	signingKey    []byte
+	strictMode    bool
+	privateKey    string
+	skipSSLVerify bool
 }
 
 type httpClient struct {
@@ -146,6 +173,66 @@ func newMetricCollector(httpClient *httpClient, metrics map[prometheus.Collector
 	return &metricCollector{httpClient, metrics}
 }
 
+func signingToken(httpClient *httpClient) string {
+	signKey, err := jwt.ParseRSAPrivateKeyFromPEM(httpClient.auth.signingKey)
+	if err != nil {
+		log.Printf("Error parsing privateKey: %s", err)
+	}
+
+	expireToken := time.Now().Add(time.Hour * 1).Unix()
+	httpClient.auth.tokenExpire = expireToken
+
+	// Create the token
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"uid": httpClient.auth.username,
+		"exp": expireToken,
+	})
+	// Sign and get the complete encoded token as a string
+	tokenString, err := token.SignedString(signKey)
+	if err != nil {
+		log.Printf("Error creating login token: %s", err)
+		return ""
+	}
+	return tokenString
+}
+
+func authToken(httpClient *httpClient) string {
+	currentTime := time.Now().Unix()
+	if currentTime > httpClient.auth.tokenExpire {
+		url := httpClient.auth.loginURL
+		signingToken := signingToken(httpClient)
+		body, err := json.Marshal(&tokenRequest{UID: httpClient.auth.username, Token: signingToken})
+		if err != nil {
+			log.Printf("Error creating JSON request: %s", err)
+			return ""
+		}
+		buffer := bytes.NewBuffer(body)
+		req, err := http.NewRequest("POST", url, buffer)
+		if err != nil {
+			log.Printf("Error creating HTTP request to %s: %s", url, err)
+			return ""
+		}
+		req.Header.Add("Content-Type", "application/json")
+		res, err := httpClient.Do(req)
+		if err != nil {
+			log.Printf("Error fetching %s: %s", url, err)
+			errorCounter.Inc()
+			return ""
+		}
+		defer res.Body.Close()
+
+		var token tokenResponse
+		if err := json.NewDecoder(res.Body).Decode(&token); err != nil {
+			log.Printf("Error decoding response body from %s: %s", url, err)
+			errorCounter.Inc()
+			return ""
+		}
+
+		httpClient.auth.token = fmt.Sprintf("token=%s", token.Token)
+	}
+	return httpClient.auth.token
+}
+
 func (httpClient *httpClient) fetchAndDecode(endpoint string, target interface{}) bool {
 	url := strings.TrimSuffix(httpClient.url, "/") + endpoint
 	req, err := http.NewRequest("GET", url, nil)
@@ -155,6 +242,9 @@ func (httpClient *httpClient) fetchAndDecode(endpoint string, target interface{}
 	}
 	if httpClient.auth.username != "" && httpClient.auth.password != "" {
 		req.SetBasicAuth(httpClient.auth.username, httpClient.auth.password)
+	}
+	if httpClient.auth.strictMode {
+		req.Header.Add("Authorization", authToken(httpClient))
 	}
 	res, err := httpClient.Do(req)
 	if err != nil {
@@ -178,7 +268,7 @@ func (c *metricCollector) Collect(ch chan<- prometheus.Metric) {
 	c.fetchAndDecode("/metrics/snapshot", &m)
 	for cm, f := range c.metrics {
 		if err := f(m, cm); err != nil {
-			if err == notFoundInMap {
+			if err == errNotFoundInMap {
 				ch := make(chan *prometheus.Desc, 1)
 				cm.Describe(ch)
 				log.Printf("Couldn't find fields required to update %s\n", <-ch)

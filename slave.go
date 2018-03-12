@@ -65,7 +65,7 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 		}): func(m metricMap, c prometheus.Collector) error {
 			registered, ok := m["slave/registered"]
 			if !ok {
-				return notFoundInMap
+				return errNotFoundInMap
 			}
 			c.(prometheus.Gauge).Set(registered)
 			return nil
@@ -78,7 +78,7 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 		}): func(m metricMap, c prometheus.Collector) error {
 			uptime, ok := m["slave/uptime_secs"]
 			if !ok {
-				return notFoundInMap
+				return errNotFoundInMap
 			}
 			c.(prometheus.Gauge).Set(uptime)
 			return nil
@@ -103,7 +103,7 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 		}): func(m metricMap, c prometheus.Collector) error {
 			active, ok := m["slave/frameworks_active"]
 			if !ok {
-				return notFoundInMap
+				return errNotFoundInMap
 			}
 			c.(prometheus.Gauge).Set(active)
 			return nil
@@ -113,7 +113,7 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 			"Total number of executor terminations."): func(m metricMap, c prometheus.Collector) error {
 			terminated, ok := m["slave/executors_terminated"]
 			if !ok {
-				return notFoundInMap
+				return errNotFoundInMap
 			}
 			c.(*settableCounter).Set(terminated)
 			return nil
@@ -123,7 +123,7 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 			"Total number of executor preemptions."): func(m metricMap, c prometheus.Collector) error {
 			preempted, ok := m["slave/executors_preempted"]
 			if !ok {
-				return notFoundInMap
+				return errNotFoundInMap
 			}
 			c.(*settableCounter).Set(preempted)
 			return nil

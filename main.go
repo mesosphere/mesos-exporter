@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -41,9 +44,9 @@ func getX509CertPool(pemFiles []string) *x509.CertPool {
 	return pool
 }
 
-func mkHttpClient(url string, timeout time.Duration, auth authInfo, certPool *x509.CertPool) *httpClient {
+func mkHTTPClient(url string, timeout time.Duration, auth authInfo, certPool *x509.CertPool) *httpClient {
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{RootCAs: certPool},
+		TLSClientConfig: &tls.Config{RootCAs: certPool, InsecureSkipVerify: auth.skipSSLVerify},
 	}
 
 	// HTTP Redirects are authenticated by Go (>=1.8), when redirecting to an identical domain or a subdomain.
@@ -57,11 +60,40 @@ func mkHttpClient(url string, timeout time.Duration, auth authInfo, certPool *x5
 		}
 	}
 
-	return &httpClient{
+	client := &httpClient{
 		http.Client{Timeout: timeout, Transport: transport, CheckRedirect: redirectFunc},
 		url,
 		auth,
 	}
+
+	if auth.strictMode {
+		client.auth.signingKey = parsePrivateKey(client)
+	}
+
+	return client
+}
+
+func parsePrivateKey(httpClient *httpClient) []byte {
+	if _, err := os.Stat(httpClient.auth.privateKey); os.IsNotExist(err) {
+		buffer := bytes.NewBuffer([]byte(httpClient.auth.privateKey))
+		var key mesosSecret
+		if err := json.NewDecoder(buffer).Decode(&key); err != nil {
+			log.Printf("Error decoding prviate key %s: %s", key, err)
+			errorCounter.Inc()
+			return []byte{}
+		}
+		httpClient.auth.username = key.UID
+		httpClient.auth.loginURL = key.LoginEndpoint
+		return []byte(key.PrivateKey)
+	}
+	absPath, _ := filepath.Abs(httpClient.auth.privateKey)
+	key, err := ioutil.ReadFile(absPath)
+	if err != nil {
+		log.Printf("Error reading private key %s: %s", absPath, err)
+		errorCounter.Inc()
+		return []byte{}
+	}
+	return key
 }
 
 func csvInputToList(input string) []string {
@@ -83,6 +115,12 @@ func main() {
 	exportedTaskLabels := fs.String("exportedTaskLabels", "", "Comma-separated list of task labels to include in the corresponding metric")
 	exportedSlaveAttributes := fs.String("exportedSlaveAttributes", "", "Comma-separated list of slave attributes to include in the corresponding metric")
 	trustedCerts := fs.String("trustedCerts", "", "Comma-separated list of certificates (.pem files) trusted for requests to Mesos endpoints")
+	strictMode := fs.Bool("dcosStrictMode", false, "Use DC/OS strict mode authentication")
+	username := fs.String("username", "", "Username for authentication")
+	password := fs.String("password", "", "Password for authentication")
+	loginURL := fs.String("dcosLoginURL", "https://leader.mesos/acs/api/v1/auth/login", "URL for DC/OS strict mode authentication")
+	privateKey := fs.String("dcosPrivateKey", "", "File path to certificate for strict mode authentication")
+	skipSSLVerify := fs.Bool("dcosSkipSSLVerify", false, "Skip SSL certificate verification during DC/OS authentication")
 
 	fs.Parse(os.Args[1:])
 	if *masterURL != "" && *slaveURL != "" {
@@ -90,11 +128,30 @@ func main() {
 	}
 
 	auth := authInfo{
-		os.Getenv("MESOS_EXPORTER_USERNAME"),
-		os.Getenv("MESOS_EXPORTER_PASSWORD"),
+		strictMode:    *strictMode,
+		skipSSLVerify: *skipSSLVerify,
+		loginURL:      *loginURL,
 	}
 
-	var certPool *x509.CertPool = nil
+	if *strictMode && *privateKey != "" {
+		auth.privateKey = *privateKey
+	} else {
+		auth.privateKey = os.Getenv("MESOS_EXPORTER_PRIVATE_KEY")
+	}
+
+	if *username != "" {
+		auth.username = *username
+	} else {
+		auth.username = os.Getenv("MESOS_EXPORTER_USERNAME")
+	}
+
+	if *password != "" {
+		auth.password = *password
+	} else {
+		auth.password = os.Getenv("MESOS_EXPORTER_PASSWORD")
+	}
+
+	var certPool *x509.CertPool
 	if *trustedCerts != "" {
 		certPool = getX509CertPool(csvInputToList(*trustedCerts))
 	}
@@ -110,7 +167,7 @@ func main() {
 				return newMasterStateCollector(c, slaveAttributeLabels)
 			},
 		} {
-			c := f(mkHttpClient(*masterURL, *timeout, auth, certPool))
+			c := f(mkHTTPClient(*masterURL, *timeout, auth, certPool))
 			if err := prometheus.Register(c); err != nil {
 				log.Fatal(err)
 			}
@@ -134,7 +191,7 @@ func main() {
 		}
 
 		for _, f := range slaveCollectors {
-			c := f(mkHttpClient(*slaveURL, *timeout, auth, certPool))
+			c := f(mkHTTPClient(*slaveURL, *timeout, auth, certPool))
 			if err := prometheus.Register(c); err != nil {
 				log.Fatal(err)
 			}
