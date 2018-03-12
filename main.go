@@ -115,12 +115,12 @@ func main() {
 	exportedTaskLabels := fs.String("exportedTaskLabels", "", "Comma-separated list of task labels to include in the corresponding metric")
 	exportedSlaveAttributes := fs.String("exportedSlaveAttributes", "", "Comma-separated list of slave attributes to include in the corresponding metric")
 	trustedCerts := fs.String("trustedCerts", "", "Comma-separated list of certificates (.pem files) trusted for requests to Mesos endpoints")
-	strictMode := fs.Bool("strictMode", false, "Use strict mode authentication")
+	strictMode := fs.Bool("dcosStrictMode", false, "Use DC/OS strict mode authentication")
 	username := fs.String("username", "", "Username for authentication")
 	password := fs.String("password", "", "Password for authentication")
-	loginURL := fs.String("loginURL", "https://leader.mesos/acs/api/v1/auth/login", "URL for strict mode authentication")
-	privateKey := fs.String("privateKey", "", "File path to certificate for strict mode authentication")
-	skipSSLVerify := fs.Bool("skipSSLVerify", false, "Skip SSL certificate verification")
+	loginURL := fs.String("dcosLoginURL", "https://leader.mesos/acs/api/v1/auth/login", "URL for DC/OS strict mode authentication")
+	privateKey := fs.String("dcosPrivateKey", "", "File path to certificate for strict mode authentication")
+	skipSSLVerify := fs.Bool("dcosSkipSSLVerify", false, "Skip SSL certificate verification during DC/OS authentication")
 
 	fs.Parse(os.Args[1:])
 	if *masterURL != "" && *slaveURL != "" {
