@@ -182,7 +182,7 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 			Namespace: "mesos",
 			Subsystem: "slave",
 			Name:      "uptime_seconds",
-			Help:      "Number of seconds the master process is running.",
+			Help:      "Number of seconds the slave process is running.",
 		}): func(m metricMap, c prometheus.Collector) error {
 			uptime, ok := m["slave/uptime_secs"]
 			if !ok {
