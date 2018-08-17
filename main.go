@@ -128,6 +128,7 @@ func main() {
 	fs := flag.NewFlagSet("mesos-exporter", flag.ExitOnError)
 	addr := fs.String("addr", ":9105", "Address to listen on")
 	masterURL := fs.String("master", "", "Expose metrics from master running on this URL")
+	masterState := fs.Bool("masterState", false, "Expose metrics derived from master state (polls /state, which can be expensive)")
 	slaveURL := fs.String("slave", "", "Expose metrics from slave running on this URL")
 	timeout := fs.Duration("timeout", 10*time.Second, "Master polling timeout")
 	exportedTaskLabels := fs.String("exportedTaskLabels", "", "Comma-separated list of task labels to include in the corresponding metric")
@@ -206,12 +207,15 @@ func main() {
 
 	switch {
 	case *masterURL != "":
-		for _, f := range []func(*httpClient) prometheus.Collector{
+		collectors := []func(*httpClient) prometheus.Collector{
 			newMasterCollector,
-			func(c *httpClient) prometheus.Collector {
+		}
+		if *masterState {
+			collectors = append(collectors, func(c *httpClient) prometheus.Collector {
 				return newMasterStateCollector(c, slaveAttributeLabels)
-			},
-		} {
+			})
+		}
+		for _, f := range collectors {
 			c := f(mkHTTPClient(*masterURL, *timeout, auth, certPool))
 			if err := prometheus.Register(c); err != nil {
 				log.WithField("error", err).Fatal("Prometheus Register() error")

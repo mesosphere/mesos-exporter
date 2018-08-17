@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -919,7 +920,215 @@ func newMasterCollector(httpClient *httpClient) prometheus.Collector {
 			return nil
 		},
 
-		// Frameworks metrics
+		// Framework call counts (total)
+		counter("master", "framework_calls_total", "Counts of API calls per framework", "framework_name", "framework_id"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/calls$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 3 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				c.(*settableCounterVec).Set(value, name, id)
+			}
+			return nil
+		},
+
+		// Framework call counts (by type)
+		counter("master", "framework_calls", "Counts of API calls per framework", "framework_name", "framework_id", "type"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/calls/(.+)$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 4 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				typ := matches[3]
+				c.(*settableCounterVec).Set(value, name, id, typ)
+			}
+			return nil
+		},
+
+		// Framework offer operation counts (total)
+		counter("master", "framework_operations_total", "Counts of offer operations per framework", "framework_name", "framework_id"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/operations$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 3 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				c.(*settableCounterVec).Set(value, name, id)
+			}
+			return nil
+		},
+
+		// Framework offer operation counts (by type)
+		counter("master", "framework_operations", "Counts of offer operations per framework", "framework_name", "framework_id", "type"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/operations/(.+)$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 4 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				typ := matches[3]
+				c.(*settableCounterVec).Set(value, name, id, typ)
+			}
+			return nil
+		},
+
+		// Framework subscribed
+		gauge("master", "framework_subscribed", "Boolean: is this framework subscribed?", "framework_name", "framework_id"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/subscribed$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 2 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				c.(*prometheus.GaugeVec).WithLabelValues(name, id).Set(value)
+			}
+			return nil
+		},
+
+		// Framework role state
+		gauge("master", "framework_suppressed", "Boolean: are offers for this role suppressed?", "framework_name", "framework_id", "role"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/roles/([^/]+)/suppressed$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 4 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				role := matches[3]
+				c.(*prometheus.GaugeVec).WithLabelValues(name, id, role).Set(value)
+			}
+			return nil
+		},
+
+		// Framework events (total)
+		counter("master", "framework_events_total", "Counts of events per framework", "framework_name", "framework_id"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/events$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 3 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				c.(*settableCounterVec).Set(value, name, id)
+			}
+			return nil
+		},
+
+		// Framework events (by type)
+		counter("master", "framework_events", "Counts of events per framework", "framework_name", "framework_id", "type"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/events/(.+)$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 4 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				typ := matches[3]
+				c.(*settableCounterVec).Set(value, name, id, typ)
+			}
+			return nil
+		},
+
+		// Framework task active states
+		gauge("master", "framework_task_states", "Task states per framework", "framework_name", "framework_id", "state"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/tasks/active/(.+)$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 4 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				state := matches[3]
+
+				c.(*prometheus.GaugeVec).WithLabelValues(name, id, state).Set(value)
+			}
+			return nil
+		},
+
+		// Framework terminal task states
+		counter("master", "framework_terminal_task_states", "Terminal task states per framework", "framework_name", "framework_id", "state"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/tasks/terminal/(.+)$`)
+
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 4 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				state := matches[3]
+
+				c.(*settableCounterVec).Set(value, name, id, state)
+			}
+			return nil
+		},
+
+		// Framework offers
+		counter("master", "framework_offers", "Number of offers by type per framework", "framework_name", "framework_id", "type"): func(m metricMap, c prometheus.Collector) error {
+			re, _ := regexp.Compile(`master/frameworks/([^/]*)/([^/]+)/offers/([^/]+)$`)
+			for metric, value := range m {
+				matches := re.FindStringSubmatch(metric)
+				if len(matches) != 4 {
+					continue
+				}
+				name, err := url.QueryUnescape(matches[1])
+				if err != nil {
+					return fmt.Errorf("could not decode framework name parsing %s: %s", metric, err)
+				}
+				id := matches[2]
+				typ := matches[3]
+				c.(*settableCounterVec).Set(value, name, id, typ)
+			}
+			return nil
+		},
+
+		// Framework message metrics
 		counter("master", "frameworks_messages", "Messages passed around with the frameworks", "framework", "type"): func(m metricMap, c prometheus.Collector) error {
 			re, err := regexp.Compile("frameworks/(.*?)/messages_(.*?)$")
 			if err != nil {
