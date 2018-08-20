@@ -47,6 +47,16 @@ When using HTTP or strict mode authentication, the following values are read fro
 - `MESOS_EXPORTER_PASSWORD`
 - `MESOS_EXPORTER_PRIVATE_KEY`
 
+## Docker
+```sh
+Usage of docker:
+
+For Master
+docker run --net="host" -e MODE=-master -e URL=http://localhost:5050 -p 9015:9015 mesos_exporter:latest
+
+For Slave
+docker run --net="host" -e MODE=-slave -e URL=http://localhost:5051 -p 9015:9015 mesos_exporter:latest
+```
 
 ## Prometheus Configuration
 

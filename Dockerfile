@@ -20,4 +20,7 @@ RUN addgroup exporter &&\
 
 USER exporter
 
-ENTRYPOINT [ "/bin/mesos-exporter" ]
+ENV MODE ${MODE}
+ENV URL ${URL}
+
+ENTRYPOINT ./bin/mesos-exporter -master "$URL"
