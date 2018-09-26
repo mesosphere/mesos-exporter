@@ -163,6 +163,44 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 			c.(*prometheus.GaugeVec).WithLabelValues("used").Set(used)
 			return nil
 		},
+		gauge("slave", "network_bandwidth", "Current network bandwidth resources in cluster.", "type"): func(m metricMap, c prometheus.Collector) error {
+			percent, ok := m["slave/network_bandwidth_percent"]
+			if !ok {
+				log.WithField("metric", "slave/network_bandwidth_percent").Warn(LogErrNotFoundInMap)
+			}
+			total, ok := m["slave/network_bandwidth_total"]
+			if !ok {
+				log.WithField("metric", "slave/network_bandwidth_total").Warn(LogErrNotFoundInMap)
+			}
+			used, ok := m["slave/network_bandwidth_used"]
+			if !ok {
+				log.WithField("metric", "slave/network_bandwidth_used").Warn(LogErrNotFoundInMap)
+			}
+			c.(*prometheus.GaugeVec).WithLabelValues("percent").Set(percent)
+			c.(*prometheus.GaugeVec).WithLabelValues("total").Set(total)
+			c.(*prometheus.GaugeVec).WithLabelValues("free").Set(total - used)
+			c.(*prometheus.GaugeVec).WithLabelValues("used").Set(used)
+			return nil
+		},
+		gauge("slave", "network_bandwidth_revocable", "Current revocable network bandwidth resources in cluster.", "type"): func(m metricMap, c prometheus.Collector) error {
+			percent, ok := m["slave/network_bandwidth_revocable_percent"]
+			if !ok {
+				log.WithField("metric", "slave/network_bandwidth_revocable_percent").Warn(LogErrNotFoundInMap)
+			}
+			total, ok := m["slave/network_bandwidth_revocable_total"]
+			if !ok {
+				log.WithField("metric", "slave/network_bandwidth_revocable_total").Warn(LogErrNotFoundInMap)
+			}
+			used, ok := m["slave/network_bandwidth_revocable_used"]
+			if !ok {
+				log.WithField("metric", "slave/network_bandwidth_revocable_used").Warn(LogErrNotFoundInMap)
+			}
+			c.(*prometheus.GaugeVec).WithLabelValues("percent").Set(percent)
+			c.(*prometheus.GaugeVec).WithLabelValues("total").Set(total)
+			c.(*prometheus.GaugeVec).WithLabelValues("free").Set(total - used)
+			c.(*prometheus.GaugeVec).WithLabelValues("used").Set(used)
+			return nil
+		},
 
 		// Slave stats about uptime and connectivity
 		prometheus.NewGauge(prometheus.GaugeOpts{
