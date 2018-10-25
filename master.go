@@ -416,11 +416,11 @@ func newMasterCollector(httpClient *httpClient) prometheus.Collector {
 				log.WithField("metric", "master/tasks_killing").Warn(LogErrNotFoundInMap)
 			}
 
-			c.(*settableCounterVec).Set(killing, "killing")
-			c.(*settableCounterVec).Set(running, "running")
-			c.(*settableCounterVec).Set(staging, "staging")
-			c.(*settableCounterVec).Set(starting, "starting")
-			c.(*settableCounterVec).Set(unreachable, "unreachable")
+			c.(*prometheus.GaugeVec).WithLabelValues("running").Set(running)
+			c.(*prometheus.GaugeVec).WithLabelValues("staging").Set(staging)
+			c.(*prometheus.GaugeVec).WithLabelValues("starting").Set(starting)
+			c.(*prometheus.GaugeVec).WithLabelValues("unreachable").Set(unreachable)
+			c.(*prometheus.GaugeVec).WithLabelValues("killing").Set(killing)
 
 			return nil
 		},
