@@ -510,6 +510,20 @@ func newSlaveCollector(httpClient *httpClient) prometheus.Collector {
 			c.(*prometheus.GaugeVec).WithLabelValues("free").Set(total - used)
 			return nil
 		},
+		gauge("slave", "containerizer_xfs_project_ids", "Number of project IDs available for XFS isolator", "type"): func(m metricMap, c prometheus.Collector) error {
+			total, ok := m["containerizer/mesos/disk/project_ids_total"]
+			if !ok {
+				log.WithField("metric", "containerizer/mesos/disk/project_ids_total").Warn(LogErrNotFoundInMap)
+			}
+			free, ok := m["containerizer/mesos/disk/project_ids_free"]
+			if !ok {
+				log.WithField("metric", "containerizer/mesos/disk/project_ids_free").Warn(LogErrNotFoundInMap)
+			}
+			c.(*prometheus.GaugeVec).WithLabelValues("total").Set(total)
+			c.(*prometheus.GaugeVec).WithLabelValues("used").Set(total - free)
+			c.(*prometheus.GaugeVec).WithLabelValues("free").Set(free)
+			return nil
+		},
 
 		// END
 	}
