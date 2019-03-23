@@ -282,12 +282,50 @@ func main() {
             <body>
             <h1>Mesos Exporter</h1>
             <p><a href="/metrics">Metrics</a></p>
+	    <p><a href="/sd">Slave service discovery</a></p>
             </body>
             </html>`))
 	})
 
 	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/sd", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(SDMesosSlaves(*masterURL)))
 	if err := http.ListenAndServe(*addr, nil); err != nil {
 		log.WithField("error", err).Fatal("listen and serve error")
 	}
 }
+func SDMesosSlaves(url string)(out string){
+	url = url  + "/state"
+	request, err := http.NewRequest("GET",url,nil)
+	client := http.Client{}
+        resp, err := client.Do(request)
+        if err != nil {
+		fmt.Printf("Cannot get to Mesos API\n")
+		return "null"
+        }
+	body, err := ioutil.ReadAll(resp.Body)
+	if resp != nil {
+		return ParseMesos(string(body))
+	} else {
+		return "null"
+	}
+}
+
+func ParseMesos(body string) (computed string) {
+	cadvisor_port, present := os.LookupEnv("CADVISOR_PORT")
+	if !present {
+		cadvisor_port = "8888"
+	}
+	labels := os.Getenv("LABELS")
+        computed = "[{\"targets\": ["
+        result := gjson.Get(string(body), "slaves.#.hostname")
+        list := ""
+	if result.Exists() {
+		for _,name := range result.Array() {
+			list = list + fmt.Sprintf("\"%s:%s\",",name.String(), cadvisor_port)
+		}
+ 	}
+
+        computed = computed + fmt.Sprintf("%s], \"labels\": { %s } } ]", strings.TrimSuffix(list,","),labels)
+        return computed
+ }
