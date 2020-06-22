@@ -19,10 +19,19 @@ type (
 		Attributes map[string]json.RawMessage `json:"attributes"`
 	}
 
+	framework_resources struct {
+		CPUs float64 `json:"cpus"`
+		Disk float64 `json:"disk"`
+		Mem  float64 `json:"mem"`
+	}
+
 	framework struct {
-		Active    bool   `json:"active"`
-		Tasks     []task `json:"tasks"`
-		Completed []task `json:"completed_tasks"`
+		Active    bool                `json:"active"`
+		Tasks     []task              `json:"tasks"`
+		Completed []task              `json:"completed_tasks"`
+		Name      string              `json:"name"`
+		Used      framework_resources `json:"used_resources"`
+		Offered   framework_resources `json:"offered_resources"`
 	}
 
 	state struct {
@@ -38,6 +47,8 @@ type (
 
 func newMasterStateCollector(httpClient *httpClient, slaveAttributeLabels []string) prometheus.Collector {
 	labels := []string{"slave"}
+	framework_labels := []string{"framework"}
+
 	metrics := map[prometheus.Collector]func(*state, prometheus.Collector){
 		prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Help:      "Total slave CPUs (fractional)",
@@ -160,6 +171,80 @@ func newMasterStateCollector(httpClient *httpClient, slaveAttributeLabels []stri
 			for _, s := range st.Slaves {
 				size := s.Unreserved.Ports.size()
 				c.(*prometheus.GaugeVec).WithLabelValues(s.PID).Set(float64(size))
+			}
+		},
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help:      "Active framework",
+			Namespace: "mesos",
+			Subsystem: "framework",
+			Name:      "active",
+		}, framework_labels): func(st *state, c prometheus.Collector) {
+			for _, f := range st.Frameworks {
+				var active float64 = 0
+				if f.Active {
+					active = 1
+				}
+				c.(*prometheus.GaugeVec).WithLabelValues(f.Name).Set(active)
+			}
+		},
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help:      "Framework cpu used",
+			Namespace: "mesos",
+			Subsystem: "framework",
+			Name:      "cpu_used",
+		}, framework_labels): func(st *state, c prometheus.Collector) {
+			for _, f := range st.Frameworks {
+				c.(*prometheus.GaugeVec).WithLabelValues(f.Name).Set(f.Used.CPUs)
+			}
+		},
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help:      "Framework disk used",
+			Namespace: "mesos",
+			Subsystem: "framework",
+			Name:      "disk_used",
+		}, framework_labels): func(st *state, c prometheus.Collector) {
+			for _, f := range st.Frameworks {
+				c.(*prometheus.GaugeVec).WithLabelValues(f.Name).Set(f.Used.Disk)
+			}
+		},
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help:      "Framework memory used",
+			Namespace: "mesos",
+			Subsystem: "framework",
+			Name:      "mem_used",
+		}, framework_labels): func(st *state, c prometheus.Collector) {
+			for _, f := range st.Frameworks {
+				c.(*prometheus.GaugeVec).WithLabelValues(f.Name).Set(f.Used.Mem)
+			}
+		},
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help:      "Framework cpu offered",
+			Namespace: "mesos",
+			Subsystem: "framework",
+			Name:      "cpu_offered",
+		}, framework_labels): func(st *state, c prometheus.Collector) {
+			for _, f := range st.Frameworks {
+				c.(*prometheus.GaugeVec).WithLabelValues(f.Name).Set(f.Offered.CPUs)
+			}
+		},
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help:      "Framework mem offered",
+			Namespace: "mesos",
+			Subsystem: "framework",
+			Name:      "mem_offered",
+		}, framework_labels): func(st *state, c prometheus.Collector) {
+			for _, f := range st.Frameworks {
+				c.(*prometheus.GaugeVec).WithLabelValues(f.Name).Set(f.Offered.Mem)
+			}
+		},
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help:      "Framework disk offered",
+			Namespace: "mesos",
+			Subsystem: "framework",
+			Name:      "disk_offered",
+		}, framework_labels): func(st *state, c prometheus.Collector) {
+			for _, f := range st.Frameworks {
+				c.(*prometheus.GaugeVec).WithLabelValues(f.Name).Set(f.Offered.Disk)
 			}
 		},
 	}
