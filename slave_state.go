@@ -88,6 +88,34 @@ func newSlaveStateCollector(httpClient *httpClient, userTaskLabelList []string, 
 		},
 	}
 
+	c.metrics[prometheus.NewDesc(
+		prometheus.BuildFQName("mesos", "slave", "task_cpus"),
+		"CPUs allocated to tasks running on slaves",
+		taskLabelList,
+		nil)] = slaveMetric{prometheus.GaugeValue,
+		func(st *slaveState) []metricValue {
+			res := []metricValue{}
+			for _, f := range st.Frameworks {
+				for _, e := range f.Executors {
+					for _, t := range e.Tasks {
+						//Default labels
+						taskLabels := prometheus.Labels{
+							"source":       e.Source,
+							"framework_id": f.ID,
+							"executor_id":  e.ID,
+							"task_id":      t.ID,
+							"task_name":    t.Name,
+						}
+
+
+						res = append(res, metricValue{t.Resources.CPUs, getLabelValuesFromMap(taskLabels, taskLabelList)})
+					}
+				}
+			}
+			return res
+		},
+	}
+
 	if len(slaveAttributeLabelList) > 0 {
 		normalisedAttributeLabels := normaliseLabelList(slaveAttributeLabelList)
 
